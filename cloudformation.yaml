@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ResNet-34 Flower Classification Model - SageMaker Endpoint'
+
+Parameters:
+  ModelDataUrl:
+    Type: String
+    Description: S3 URI of the model.tar.gz file
+
+  BucketName:
+    Type: String
+    Description: S3 bucket name for model artifacts
+
+  InstanceType:
+    Type: String
+    Default: ml.t2.medium
+    Description: SageMaker instance type for inference
+    AllowedValues:
+      - ml.t2.medium
+      - ml.t2.large
+      - ml.m5.large
+      - ml.m5.xlarge
+      - ml.g4dn.xlarge
+
+Resources:
+  # IAM Role for SageMaker
+  SageMakerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'FlowerClassifier-SageMaker-${AWS::StackName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${BucketName}'
+                  - !Sub 'arn:aws:s3:::${BucketName}/*'
+
+  # SageMaker Model
+  FlowerClassifierModel:
+    Type: AWS::SageMaker::Model
+    Properties:
+      ModelName: !Sub 'flower-classifier-${AWS::StackName}'
+      ExecutionRoleArn: !GetAtt SageMakerExecutionRole.Arn
+      PrimaryContainer:
+        Image: !Sub '763104351884.dkr.ecr.${AWS::Region}.amazonaws.com/pytorch-inference:2.0.0-cpu-py310'
+        ModelDataUrl: !Ref ModelDataUrl
+        Environment:
+          SAGEMAKER_PROGRAM: inference.py
+          SAGEMAKER_SUBMIT_DIRECTORY: /opt/ml/model/code
+          SAGEMAKER_CONTAINER_LOG_LEVEL: '20'
+
+  # Endpoint Configuration
+  FlowerClassifierEndpointConfig:
+    Type: AWS::SageMaker::EndpointConfig
+    Properties:
+      EndpointConfigName: !Sub 'flower-classifier-config-${AWS::StackName}'
+      ProductionVariants:
+        - VariantName: AllTraffic
+          ModelName: !GetAtt FlowerClassifierModel.ModelName
+          InitialInstanceCount: 1
+          InstanceType: !Ref InstanceType
+          InitialVariantWeight: 1.0
+
+  # Endpoint
+  FlowerClassifierEndpoint:
+    Type: AWS::SageMaker::Endpoint
+    Properties:
+      EndpointName: !Sub 'flower-classifier-${AWS::StackName}'
+      EndpointConfigName: !GetAtt FlowerClassifierEndpointConfig.EndpointConfigName
+
+Outputs:
+  EndpointName:
+    Description: SageMaker Endpoint Name
+    Value: !GetAtt FlowerClassifierEndpoint.EndpointName
+    Export:
+      Name: !Sub '${AWS::StackName}-EndpointName'
+
+  EndpointArn:
+    Description: SageMaker Endpoint ARN
+    Value: !Ref FlowerClassifierEndpoint
+
+  ModelName:
+    Description: SageMaker Model Name
+    Value: !GetAtt FlowerClassifierModel.ModelName
+
+  InvokeUrl:
+    Description: URL to invoke the endpoint
+    Value: !Sub 'https://runtime.sagemaker.${AWS::Region}.amazonaws.com/endpoints/${FlowerClassifierEndpoint.EndpointName}/invocations'
