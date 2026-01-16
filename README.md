@@ -1,6 +1,6 @@
 # ResNet-34 Flower Classification - AWS SageMaker Deployment
 
-Deploy a pre-trained ResNet-34 flower classification model to AWS SageMaker with a real-time inference endpoint.
+Development and Deployment of a trained ResNet-34 flower classification model to AWS SageMaker with a real-time inference endpoint.
 
 ## Model Details
 
